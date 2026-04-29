@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务大转盘</title>
+    <!-- 引入 Tailwind CSS 进行页面美化 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定义动画 */
+        @keyframes bounceIn {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); opacity: 1; }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-bounceIn { animation: bounceIn 0.8s ease-out forwards; }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-in forwards; }
+        .animate-bounceIn-fast { animation: bounceIn 0.5s ease-out forwards; }
+        
+        body {
+            background-color: #E0F7FA;
+            /* 动物背景图案 */
+            background-image: url("data:image/svg+xml,%3Csvg width='180' height='180' viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Ctext x='20' y='50' font-size='45' opacity='0.4'%3E🐰%3C/text%3E%3Ctext x='110' y='80' font-size='45' opacity='0.4'%3E🐘%3C/text%3E%3Ctext x='30' y='140' font-size='45' opacity='0.4'%3E🐊%3C/text%3E%3Ctext x='120' y='160' font-size='45' opacity='0.4'%3E🐼%3C/text%3E%3C/svg%3E");
+            margin: 0;
+            overflow: hidden;
+        }
+
+        #task-modal-content {
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='30' cy='30' r='2' fill='%23FCD34D' opacity='0.4' /%3E%3C/svg%3E");
+        }
+    </style>
+</head>
+<body class="min-h-screen w-full flex flex-col items-center justify-center font-sans relative">
+
+    <!-- 烟花画布 -->
+    <canvas id="fireworksCanvas" class="fixed inset-0 pointer-events-none z-0 hidden"></canvas>
+
+    <!-- ===== 1. 开始界面 ===== -->
+    <div id="start-screen" class="z-10 flex flex-col items-center justify-center p-8 bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border-4 border-yellow-400 max-w-2xl text-center transform transition-all hover:scale-105">
+        <h1 class="text-6xl md:text-8xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 mb-8 drop-shadow-md">
+            游戏开始咯！
+        </h1>
+        <p class="text-2xl text-gray-700 mb-12 font-bold">
+            准备好接受欢乐挑战了吗？
+        </p>
+        <button onclick="startGame()" class="group relative inline-flex items-center justify-center px-12 py-6 text-4xl font-bold text-white transition-all duration-200 bg-yellow-500 rounded-full hover:bg-yellow-400 active:scale-95 shadow-[0_8px_0_rgb(202,138,4)] hover:shadow-[0_4px_0_rgb(202,138,4)] hover:translate-y-1">
+            <span>👉 点击进入转盘</span>
+        </button>
+    </div>
+
+    <!-- ===== 2. 游戏界面 ===== -->
+    <div id="game-screen" class="hidden flex-col items-center z-10 w-full max-w-4xl p-4">
+        <div class="text-center mb-8">
+            <h2 class="text-4xl md:text-6xl font-bold text-blue-600 drop-shadow-sm mb-4 bg-white/70 inline-block px-8 py-3 rounded-full border-4 border-white shadow-lg">
+                任务大转盘 🎡
+            </h2>
+            <p id="game-subtitle" class="text-xl text-gray-800 font-semibold">
+                点击下方按钮或者转盘中心开始！
+            </p>
+        </div>
+
+        <!-- 转盘容器 -->
+        <div class="relative w-80 h-80 md:w-[500px] md:h-[500px] rounded-full shadow-[0_0_40px_rgba(0,0,0,0.2)] border-8 border-white bg-white">
+            <!-- 指针 -->
+            <div class="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[40px] border-t-red-600 drop-shadow-lg"></div>
+
+            <!-- SVG 转盘 -->
+            <svg id="wheel-svg" viewBox="0 0 100 100" class="w-full h-full rounded-full"></svg>
+
+            <!-- 中心按钮 -->
+            <button id="center-spin-btn" onclick="spinWheel()" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 md:w-28 md:h-28 bg-white rounded-full flex items-center justify-center shadow-xl border-4 border-gray-200 z-10 hover:scale-105 active:scale-95 transition-transform disabled:opacity-80 disabled:cursor-not-allowed">
+                <span id="center-btn-text" class="text-2xl md:text-3xl font-black text-red-500">GO!</span>
+            </button>
+        </div>
+
+        <!-- 底部按钮 -->
+        <div class="mt-12">
+            <button id="bottom-spin-btn" onclick="spinWheel()" class="px-10 py-5 bg-blue-500 text-white text-3xl font-bold rounded-2xl shadow-[0_6px_0_rgb(37,99,235)] hover:bg-blue-400 hover:translate-y-1 hover:shadow-[0_2px_0_rgb(37,99,235)] active:translate-y-2 active:shadow-none transition-all disabled:bg-gray-400 disabled:shadow-[0_6px_0_rgb(156,163,175)]">
+                开始抽取
+            </button>
+        </div>
+    </div>
+
+    <!-- ===== 3. 游戏结束界面 ===== -->
+    <div id="game-over-screen" class="hidden z-20 flex-col items-center justify-center p-10 bg-white/90 backdrop-blur-md rounded-[3rem] shadow-2xl border-8 border-pink-400 max-w-3xl text-center transform animate-bounceIn">
+        <div class="text-8xl mb-6 animate-bounce">🏆</div>
+        <h2 class="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-pink-500 to-yellow-500 mb-8 drop-shadow-sm leading-tight">
+            恭喜小朋友们完成了<br/>全部的游戏任务！
+        </h2>
+        <button onclick="restartGame()" class="mt-4 px-12 py-6 bg-yellow-400 text-red-600 text-4xl font-black rounded-full shadow-[0_8px_0_rgb(202,138,4)] hover:bg-yellow-300 hover:translate-y-1 hover:shadow-[0_4px_0_rgb(202,138,4)] active:translate-y-3 active:shadow-none transition-all border-4 border-yellow-500">
+            🔄 再来一次
+        </button>
+    </div>
+
+    <!-- ===== 4. 任务弹窗 ===== -->
+    <div id="task-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div id="task-modal-content" class="bg-white rounded-[3rem] p-8 md:p-12 max-w-3xl w-full text-center shadow-2xl relative border-8 border-yellow-300 transform animate-bounceIn-fast">
+            <div class="absolute -top-12 left-1/2 -translate-x-1/2 text-7xl">🌟</div>
+
+            <h3 id="modal-title" class="text-4xl md:text-5xl font-black text-pink-500 mb-6 drop-shadow-sm">任务标题</h3>
+            
+            <div class="bg-blue-50 rounded-3xl p-8 mb-10 border-2 border-blue-100">
+                <p id="modal-task" class="text-3xl md:text-5xl text-gray-800 font-bold leading-snug whitespace-pre-line">任务内容</p>
+            </div>
+
+            <button onclick="closeModal()" class="px-12 py-5 bg-green-500 text-white text-3xl font-bold rounded-full shadow-[0_6px_0_rgb(21,128,61)] hover:bg-green-400 hover:translate-y-1 hover:shadow-[0_2px_0_rgb(21,128,61)] active:translate-y-2 active:shadow-none transition-all">
+                完成任务！
+            </button>
+
+            <!-- 主持人提示 -->
+            <div class="absolute bottom-6 right-6 text-right">
+                <button id="host-note-btn" onclick="showHostNote()" class="text-gray-400 hover:text-gray-600 font-bold text-sm bg-gray-100 px-3 py-1 rounded-full opacity-50 hover:opacity-100 transition-opacity">
+                    🕵️ 主持人提示
+                </button>
+                <div id="host-note-content" class="hidden bg-yellow-100 border border-yellow-300 p-4 rounded-xl text-left shadow-lg max-w-xs relative animate-fadeIn">
+                    <button onclick="hideHostNote()" class="absolute top-1 right-2 text-gray-500 hover:text-red-500 font-bold">×</button>
+                    <span class="block font-bold text-yellow-800 text-sm mb-1">💡 主持人提示：</span>
+                    <span id="modal-host-note" class="text-gray-700 text-sm">提示内容</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 脚本逻辑 ===== -->
+    <script>
+        // --- 1. 游戏数据 ---
+        const TASKS = [
+            { id: 1, title: '动物走路秀', task: '学一种动物走路，走3步', hostNote: '例如：兔子、企鹅、大象、猫' },
+            { id: 2, title: '模仿动物唱歌', task: '学一种动物唱歌的声音，让大家猜猜是什么', hostNote: '先让小朋友说出要唱哪一首歌' },
+            { id: 3, title: '“手机上瘾”小表演', task: '表演玩手机太久的样子', hostNote: '例如：看不清楚一直揉眼睛，或停不下来一直滑手机' },
+            { id: 4, title: '劝朋友少玩手机', task: '劝朋友不要沉迷手机\n（最多只能用10个字哦）', hostNote: '例如：少玩手机，多读书，好处多' },
+            { id: 5, title: '动作猜兴趣', task: '用动作表演你的兴趣，让大家猜是什么', hostNote: '如果没有头绪可以引导他们想想周末喜欢做什么' },
+            { id: 6, title: '词语猜兴趣', task: '用3个词来形容你的兴趣，让大家猜', hostNote: '例如：圆圆、篮子、5个人 => 我的兴趣是打篮球' },
+            { id: 7, title: '帮动物选铃声', task: '如果动物有手机，你会帮它选什么铃声？\n（可以说出来或表演出来）', hostNote: '例如：小猫的手机铃声：喵喵喵，喵喵喵。先让小朋友说出他选什么动物。如时间允许，让小朋友表演后问他为什么选这个铃声' },
+            { id: 8, title: '表现心情的动作', task: '做喜欢的事情时，心情是怎样的？\n（用3个连续动作表现出来）', hostNote: '先问小朋友他有怎样的心情，然后引导他用动作表现出来。如果小朋友不明白，才给例子，引导他回答' }
+        ];
+
+        const WHEEL_COLORS = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93', '#FF9F1C', '#F15BB5', '#00BBF9'];
+
+        // 状态变量
+        let usedTasks = [];
+        let rotation = 0;
+        let isSpinning = false;
+        let currentTask = null;
+
+        // --- 2. 音效引擎 ---
+        class SoundEngine {
+            constructor() { this.ctx = null; }
+            init() {
+                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+            }
+            playTick() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1000, this.ctx.currentTime + 0.05);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.05);
+            }
+            playTada() {
+                if (!this.ctx) return;
+                const chord = [523.25, 659.25, 783.99, 1046.50];
+                chord.forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.connect(gain); gain.connect(this.ctx.destination);
+                    osc.type = 'sine'; osc.frequency.value = freq;
+                    const startTime = this.ctx.currentTime + (i * 0.05);
+                    gain.gain.setValueAtTime(0, startTime);
+                    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.01, startTime + 1.5);
+                    osc.start(startTime); osc.stop(startTime + 1.5);
+                });
+            }
+        }
+        const audio = new SoundEngine();
+
+        // --- 3. 页面初始化与渲染 ---
+        function renderWheel() {
+            const svg = document.getElementById('wheel-svg');
+            let svgContent = '';
+            
+            TASKS.forEach((t, i) => {
+                const isUsed = usedTasks.includes(t.id);
+                const color = isUsed ? '#D1D5DB' : WHEEL_COLORS[i];
+                
+                const startAngle = i * 45;
+                const endAngle = (i + 1) * 45;
+                const radStart = Math.PI * (startAngle - 90) / 180;
+                const radEnd = Math.PI * (endAngle - 90) / 180;
+                
+                const x1 = 50 + 50 * Math.cos(radStart);
+                const y1 = 50 + 50 * Math.sin(radStart);
+                const x2 = 50 + 50 * Math.cos(radEnd);
+                const y2 = 50 + 50 * Math.sin(radEnd);
+                
+                const midAngle = startAngle + 22.5;
+                const radMid = Math.PI * (midAngle - 90) / 180;
+                const textX = 50 + 32 * Math.cos(radMid);
+                const textY = 50 + 32 * Math.sin(radMid);
+
+                svgContent += `
+                    <g>
+                        <path d="M50,50 L${x1},${y1} A50,50 0 0,1 ${x2},${y2} Z" fill="${color}" stroke="#FFFFFF" stroke-width="0.5"></path>
+                        <text x="${textX}" y="${textY}" fill="${isUsed ? '#9CA3AF' : '#FFFFFF'}" font-size="14" font-weight="bold" text-anchor="middle" dominant-baseline="middle" transform="rotate(${midAngle}, ${textX}, ${textY})" style="text-shadow: ${isUsed ? 'none' : '1px 1px 2px rgba(0,0,0,0.3)'}">${t.id}</text>
+                    </g>
+                `;
+            });
+            svg.innerHTML = svgContent;
+        }
+
+        // --- 4. 交互逻辑 ---
+        function startGame() {
+            audio.init();
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('game-screen').classList.add('flex');
+            renderWheel();
+        }
+
+        function spinWheel() {
+            if (isSpinning) return;
+            
+            const availableTasks = TASKS.filter(t => !usedTasks.includes(t.id));
+            if (availableTasks.length === 0) return;
+
+            isSpinning = true;
+            audio.init();
+
+            // 禁用按钮
+            document.getElementById('center-spin-btn').disabled = true;
+            document.getElementById('bottom-spin-btn').disabled = true;
+            document.getElementById('center-btn-text').innerText = '转...';
+
+            const selectedTask = availableTasks[Math.floor(Math.random() * availableTasks.length)];
+            const taskIndex = TASKS.findIndex(t => t.id === selectedTask.id);
+
+            const segmentAngle = 360 / TASKS.length;
+            const targetCenterAngle = taskIndex * segmentAngle + (segmentAngle / 2);
+            const randomOffset = Math.random() * 30 - 15;
+            rotation = rotation + (360 * 5) + (360 - (rotation % 360)) + (360 - targetCenterAngle) + randomOffset;
+
+            const svg = document.getElementById('wheel-svg');
+            svg.style.transition = 'transform 5s cubic-bezier(0.25, 0.1, 0.15, 1)';
+            svg.style.transform = `rotate(${rotation}deg)`;
+
+            // 播放滴答音效
+            let ticks = 0;
+            const playSpinSound = () => {
+                audio.playTick();
+                ticks++;
+                if (ticks < 15) setTimeout(playSpinSound, 100);
+                else if (ticks < 25) setTimeout(playSpinSound, 200);
+                else if (ticks < 32) setTimeout(playSpinSound, 350);
+            };
+            playSpinSound();
+
+            setTimeout(() => {
+                isSpinning = false;
+                currentTask = selectedTask;
+                document.getElementById('center-spin-btn').disabled = false;
+                document.getElementById('bottom-spin-btn').disabled = false;
+                document.getElementById('center-btn-text').innerText = 'GO!';
+                
+                openModal();
+                audio.playTada();
+            }, 5000);
+        }
+
+        function openModal() {
+            if (!currentTask) return;
+            document.getElementById('modal-title').innerText = currentTask.title;
+            document.getElementById('modal-task').innerText = currentTask.task;
+            document.getElementById('modal-host-note').innerText = currentTask.hostNote || '让小朋友自由发挥即可。';
+            
+            hideHostNote();
+            
+            const modal = document.getElementById('task-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            
+            // 重置动画
+            const content = document.getElementById('task-modal-content');
+            content.classList.remove('animate-bounceIn-fast');
+            void content.offsetWidth; // 触发重绘
+            content.classList.add('animate-bounceIn-fast');
+        }
+
+        function closeModal() {
+            document.getElementById('task-modal').classList.add('hidden');
+            document.getElementById('task-modal').classList.remove('flex');
+            
+            if (currentTask && !usedTasks.includes(currentTask.id)) {
+                usedTasks.push(currentTask.id);
+            }
+            currentTask = null;
+            renderWheel();
+
+            if (usedTasks.length === TASKS.length) {
+                showGameOver();
+            }
+        }
+
+        function showHostNote() {
+            document.getElementById('host-note-btn').classList.add('hidden');
+            document.getElementById('host-note-content').classList.remove('hidden');
+        }
+
+        function hideHostNote() {
+            document.getElementById('host-note-btn').classList.remove('hidden');
+            document.getElementById('host-note-content').classList.add('hidden');
+        }
+
+        function showGameOver() {
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('flex');
+            document.getElementById('game-over-screen').classList.remove('hidden');
+            document.getElementById('game-over-screen').classList.add('flex');
+            startFireworks();
+        }
+
+        function restartGame() {
+            usedTasks = [];
+            rotation = 0;
+            const svg = document.getElementById('wheel-svg');
+            svg.style.transition = 'none';
+            svg.style.transform = `rotate(0deg)`;
+            renderWheel();
+            
+            audio.playTada();
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.remove('flex');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('game-screen').classList.add('flex');
+            stopFireworks();
+        }
+
+        // --- 5. 烟花特效引擎 ---
+        let fwAnimationFrame;
+        function startFireworks() {
+            const canvas = document.getElementById('fireworksCanvas');
+            canvas.classList.remove('hidden');
+            const ctx = canvas.getContext('2d');
+            
+            const resizeCanvas = () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            };
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas();
+
+            const particles = [];
+            const colors = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#F15BB5', '#00BBF9'];
+
+            function createExplosion(x, y) {
+                for (let i = 0; i < 60; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 6 + 2;
+                    particles.push({
+                        x, y,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        life: 1,
+                        decay: Math.random() * 0.015 + 0.015,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        size: Math.random() * 4 + 2
+                    });
+                }
+            }
+
+            function renderFW() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (Math.random() < 0.04) {
+                    createExplosion(Math.random() * canvas.width, Math.random() * (canvas.height * 0.6) + 50);
+                }
+
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let p = particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.15; // 重力
+                    p.life -= p.decay;
+                    
+                    ctx.globalAlpha = Math.max(0, p.life);
+                    ctx.fillStyle = p.color;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    if (p.life <= 0) particles.splice(i, 1);
+                }
+                ctx.globalAlpha = 1;
+                fwAnimationFrame = requestAnimationFrame(renderFW);
+            }
+            renderFW();
+        }
+
+        function stopFireworks() {
+            cancelAnimationFrame(fwAnimationFrame);
+            document.getElementById('fireworksCanvas').classList.add('hidden');
+        }
+
+        // 页面加载完成后初次渲染
+        document.addEventListener('DOMContentLoaded', renderWheel);
+    </script>
+</body>
+</html>
