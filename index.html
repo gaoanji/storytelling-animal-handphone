@@ -1,0 +1,450 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+// --- 游戏数据 ---
+const TASKS = [
+  { id: 1, title: '动物走路秀', task: '学一种动物走路，走3步', hostNote: '例如：兔子、企鹅、大象、猫' },
+  { id: 2, title: '模仿动物唱歌', task: '学一种动物唱歌的声音，让大家猜猜是什么', hostNote: '先让小朋友说出要唱哪一首歌' },
+  { id: 3, title: '“手机上瘾”小表演', task: '表演玩手机太久的样子', hostNote: '例如：看不清楚一直揉眼睛，或停不下来一直滑手机' },
+  { id: 4, title: '劝朋友少玩手机', task: '劝朋友不要沉迷手机\n（最多只能用10个字哦）', hostNote: '例如：少玩手机，多读书，好处多' },
+  { id: 5, title: '动作猜兴趣', task: '用动作表演你的兴趣，让大家猜是什么', hostNote: '如果没有头绪可以引导他们想想周末喜欢做什么' },
+  { id: 6, title: '词语猜兴趣', task: '用3个词来形容你的兴趣，让大家猜', hostNote: '例如：圆圆、篮子、5个人 => 我的兴趣是打篮球' },
+  { id: 7, title: '帮动物选铃声', task: '如果动物有手机，你会帮它选什么铃声？\n（可以说出来或表演出来）', hostNote: '例如：小猫的手机铃声：喵喵喵，喵喵喵。先让小朋友说出他选什么动物。如时间允许，让小朋友表演后问他为什么选这个铃声' },
+  { id: 8, title: '表现心情的动作', task: '做喜欢的事情时，心情是怎样的？\n（用3个连续动作表现出来）', hostNote: '先问小朋友他有怎样的心情，然后引导他用动作表现出来。如果小朋友不明白，才给例子，引导他回答' }
+];
+
+const WHEEL_COLORS = [
+  '#FF595E', // Red
+  '#FFCA3A', // Yellow
+  '#8AC926', // Green
+  '#1982C4', // Blue
+  '#6A4C93', // Purple
+  '#FF9F1C', // Orange
+  '#F15BB5', // Pink
+  '#00BBF9'  // Cyan
+];
+
+// --- 音效引擎 (无需外部文件) ---
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+  }
+  
+  init() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+  }
+
+  playTick() {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1000, this.ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.05);
+  }
+
+  playTada() {
+    if (!this.ctx) return;
+    const chord = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    chord.forEach((freq, i) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const startTime = this.ctx.currentTime + (i * 0.05);
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.3, startTime + 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + 1.5);
+      osc.start(startTime);
+      osc.stop(startTime + 1.5);
+    });
+  }
+}
+
+const audioRef = new SoundEngine();
+
+// --- 烟花特效组件 ---
+const Fireworks = () => {
+  useEffect(() => {
+    const canvas = document.getElementById('fireworksCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    const resizeCanvas = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    const particles = [];
+    const colors = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#F15BB5', '#00BBF9'];
+
+    function createExplosion(x, y) {
+      for (let i = 0; i < 60; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 6 + 2;
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          decay: Math.random() * 0.015 + 0.015,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          size: Math.random() * 4 + 2
+        });
+      }
+    }
+
+    let animationFrame;
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // 随机产生新的烟花
+      if (Math.random() < 0.04) {
+        createExplosion(Math.random() * canvas.width, Math.random() * (canvas.height * 0.6) + 50);
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.15; // 重力
+        p.life -= p.decay;
+        
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      ctx.globalAlpha = 1;
+      animationFrame = requestAnimationFrame(render);
+    }
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, []);
+
+  return <canvas id="fireworksCanvas" className="fixed inset-0 pointer-events-none z-40" />;
+};
+
+export default function App() {
+  const [gameState, setGameState] = useState('start'); // 'start', 'playing'
+  const [usedTasks, setUsedTasks] = useState([]);
+  const [rotation, setRotation] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [currentTask, setCurrentTask] = useState(null);
+  const [showHostNote, setShowHostNote] = useState(false);
+
+  const startGame = () => {
+    audioRef.init(); // Initialize audio on user interaction
+    setGameState('playing');
+  };
+
+  const spinWheel = () => {
+    if (isSpinning) return;
+    
+    const availableTasks = TASKS.filter(t => !usedTasks.includes(t.id));
+    if (availableTasks.length === 0) {
+      alert("太棒了！所有任务都完成了！");
+      return;
+    }
+
+    setIsSpinning(true);
+    audioRef.init();
+
+    // 随机选择一个还没有抽过的任务
+    const selectedTask = availableTasks[Math.floor(Math.random() * availableTasks.length)];
+    const taskIndex = TASKS.findIndex(t => t.id === selectedTask.id);
+
+    // 计算转盘需要旋转的角度
+    // 假设转盘顶部是0度（指针位置）
+    // 每个扇形占 360 / 8 = 45 度
+    const segmentAngle = 360 / TASKS.length;
+    // 目标扇形的中心角度（相对于初始状态的顶部）
+    const targetCenterAngle = taskIndex * segmentAngle + (segmentAngle / 2);
+    // 为了让目标转到顶部（0度），我们需要旋转的度数为 360 - 目标中心角度
+    // 加上多圈（比如5圈 = 1800度）让动画更长
+    const randomOffset = Math.random() * 30 - 15; // 稍微偏离中心，显得真实
+    const newRotation = rotation + (360 * 5) + (360 - (rotation % 360)) + (360 - targetCenterAngle) + randomOffset;
+
+    setRotation(newRotation);
+
+    // 模拟音效循环
+    let ticks = 0;
+    const playSpinSound = () => {
+      audioRef.playTick();
+      ticks++;
+      if (ticks < 15) {
+        setTimeout(playSpinSound, 100);
+      } else if (ticks < 25) {
+        setTimeout(playSpinSound, 200);
+      } else if (ticks < 32) {
+        setTimeout(playSpinSound, 350);
+      }
+    };
+    playSpinSound();
+
+    // 等待旋转动画结束
+    setTimeout(() => {
+      setIsSpinning(false);
+      setCurrentTask(selectedTask);
+      setShowModal(true);
+      setShowHostNote(false);
+      audioRef.playTada();
+    }, 5000); // CSS transition 也是 5s
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    if (currentTask && !usedTasks.includes(currentTask.id)) {
+      setUsedTasks([...usedTasks, currentTask.id]);
+    }
+    setCurrentTask(null);
+  };
+
+  const restartGame = () => {
+    setUsedTasks([]);
+    setRotation(0);
+    audioRef.playTada();
+  };
+
+  // 绘制 SVG 背景图案 - 调大动物尺寸，替换鳄鱼和大象
+  const bgPattern = `url("data:image/svg+xml,%3Csvg width='180' height='180' viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Ctext x='20' y='50' font-size='45' opacity='0.4'%3E🐰%3C/text%3E%3Ctext x='110' y='80' font-size='45' opacity='0.4'%3E🐘%3C/text%3E%3Ctext x='30' y='140' font-size='45' opacity='0.4'%3E🐊%3C/text%3E%3Ctext x='120' y='160' font-size='45' opacity='0.4'%3E🐼%3C/text%3E%3C/svg%3E")`;
+
+  const isGameOver = usedTasks.length === TASKS.length && !showModal;
+
+  return (
+    <div 
+      className="min-h-screen w-full flex flex-col items-center justify-center font-sans overflow-hidden relative"
+      style={{ backgroundColor: '#E0F7FA', backgroundImage: bgPattern }}
+    >
+      {/* ===== 烟花特效 ===== */}
+      {isGameOver && <Fireworks />}
+
+      {/* ===== 开始界面 ===== */}
+      {gameState === 'start' && (
+        <div className="z-10 flex flex-col items-center justify-center p-8 bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border-4 border-yellow-400 max-w-2xl text-center transform transition-all hover:scale-105">
+          <h1 className="text-6xl md:text-8xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 mb-8 drop-shadow-md">
+            游戏开始咯！
+          </h1>
+          <p className="text-2xl text-gray-700 mb-12 font-bold">
+            准备好接受欢乐挑战了吗？
+          </p>
+          <button 
+            onClick={startGame}
+            className="group relative inline-flex items-center justify-center px-12 py-6 text-4xl font-bold text-white transition-all duration-200 bg-yellow-500 font-pj rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 hover:bg-yellow-400 active:scale-95 shadow-[0_8px_0_rgb(202,138,4)] hover:shadow-[0_4px_0_rgb(202,138,4)] hover:translate-y-1"
+          >
+            <span>👉 点击进入转盘</span>
+          </button>
+        </div>
+      )}
+
+      {/* ===== 游戏界面 ===== */}
+      {gameState === 'playing' && !isGameOver && (
+        <div className="flex flex-col items-center z-10 w-full max-w-4xl p-4">
+          <div className="text-center mb-8">
+            <h2 className="text-4xl md:text-6xl font-bold text-blue-600 drop-shadow-sm mb-4 bg-white/70 inline-block px-8 py-3 rounded-full border-4 border-white shadow-lg">
+              任务大转盘 🎡
+            </h2>
+            <p className="text-xl text-gray-800 font-semibold">
+              点击下方按钮或者转盘中心开始！
+            </p>
+          </div>
+
+          {/* 转盘容器 */}
+          <div className="relative w-80 h-80 md:w-[500px] md:h-[500px] rounded-full shadow-[0_0_40px_rgba(0,0,0,0.2)] border-8 border-white bg-white">
+            {/* 顶部的指示指针 */}
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[40px] border-t-red-600 drop-shadow-lg"></div>
+
+            {/* SVG 转盘本体 */}
+            <svg 
+              viewBox="0 0 100 100" 
+              className="w-full h-full rounded-full"
+              style={{
+                transform: `rotate(${rotation}deg)`,
+                transition: isSpinning ? 'transform 5s cubic-bezier(0.25, 0.1, 0.15, 1)' : 'none'
+              }}
+            >
+              {TASKS.map((t, i) => {
+                const isUsed = usedTasks.includes(t.id);
+                const color = isUsed ? '#D1D5DB' : WHEEL_COLORS[i]; // 抽过变灰
+                
+                // 计算扇形路径
+                const startAngle = i * 45;
+                const endAngle = (i + 1) * 45;
+                
+                // SVG中角度0是右侧(3点钟)，我们转一下让它好看点
+                const radStart = Math.PI * (startAngle - 90) / 180;
+                const radEnd = Math.PI * (endAngle - 90) / 180;
+                
+                const x1 = 50 + 50 * Math.cos(radStart);
+                const y1 = 50 + 50 * Math.sin(radStart);
+                const x2 = 50 + 50 * Math.cos(radEnd);
+                const y2 = 50 + 50 * Math.sin(radEnd);
+                
+                // 计算文字位置 (在扇形的中间)
+                const midAngle = startAngle + 22.5;
+                const radMid = Math.PI * (midAngle - 90) / 180;
+                const textX = 50 + 32 * Math.cos(radMid);
+                const textY = 50 + 32 * Math.sin(radMid);
+
+                return (
+                  <g key={t.id}>
+                    <path
+                      d={`M50,50 L${x1},${y1} A50,50 0 0,1 ${x2},${y2} Z`}
+                      fill={color}
+                      stroke="#FFFFFF"
+                      strokeWidth="0.5"
+                    />
+                    {/* 数字只显示1-8 */}
+                    <text
+                      x={textX}
+                      y={textY}
+                      fill={isUsed ? '#9CA3AF' : '#FFFFFF'}
+                      fontSize="14"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      // 旋转文字使其朝向圆心外
+                      transform={`rotate(${midAngle}, ${textX}, ${textY})`}
+                      style={{ textShadow: isUsed ? 'none' : '1px 1px 2px rgba(0,0,0,0.3)' }}
+                    >
+                      {t.id}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* 中心按钮 */}
+            <button 
+              onClick={spinWheel}
+              disabled={isSpinning}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 md:w-28 md:h-28 bg-white rounded-full flex items-center justify-center shadow-xl border-4 border-gray-200 z-10 hover:scale-105 active:scale-95 transition-transform disabled:opacity-80 disabled:cursor-not-allowed"
+            >
+              <span className="text-2xl md:text-3xl font-black text-red-500">
+                {isSpinning ? '转...' : 'GO!'}
+              </span>
+            </button>
+          </div>
+
+          {/* 底部操作区 */}
+          <div className="mt-12">
+            <button 
+              onClick={spinWheel}
+              disabled={isSpinning}
+              className="px-10 py-5 bg-blue-500 text-white text-3xl font-bold rounded-2xl shadow-[0_6px_0_rgb(37,99,235)] hover:bg-blue-400 hover:translate-y-1 hover:shadow-[0_2px_0_rgb(37,99,235)] active:translate-y-2 active:shadow-none transition-all disabled:bg-gray-400 disabled:shadow-[0_6px_0_rgb(156,163,175)]"
+            >
+              开始抽取
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 游戏结束界面 ===== */}
+      {isGameOver && (
+        <div className="z-20 flex flex-col items-center justify-center p-10 bg-white/90 backdrop-blur-md rounded-[3rem] shadow-2xl border-8 border-pink-400 max-w-3xl text-center transform scale-100 animate-[bounceIn_0.8s_ease-out]">
+          <div className="text-8xl mb-6 animate-bounce">🏆</div>
+          <h2 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-pink-500 to-yellow-500 mb-8 drop-shadow-sm leading-tight">
+            恭喜小朋友们完成了<br/>全部的游戏任务！
+          </h2>
+          <button 
+            onClick={restartGame}
+            className="mt-4 px-12 py-6 bg-yellow-400 text-red-600 text-4xl font-black rounded-full shadow-[0_8px_0_rgb(202,138,4)] hover:bg-yellow-300 hover:translate-y-1 hover:shadow-[0_4px_0_rgb(202,138,4)] active:translate-y-3 active:shadow-none transition-all border-4 border-yellow-500"
+          >
+            🔄 再来一次
+          </button>
+        </div>
+      )}
+
+      {/* ===== 弹窗 (Popup) ===== */}
+      {showModal && currentTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div 
+            className="bg-white rounded-[3rem] p-8 md:p-12 max-w-3xl w-full text-center shadow-2xl relative border-8 border-yellow-300 transform scale-100 animate-[bounceIn_0.5s_ease-out]"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='30' cy='30' r='2' fill='%23FCD34D' opacity='0.4' /%3E%3C/svg%3E")` }}
+          >
+            {/* 顶部装饰 */}
+            <div className="absolute -top-12 left-1/2 -translate-x-1/2 text-7xl">
+              🌟
+            </div>
+
+            <h3 className="text-4xl md:text-5xl font-black text-pink-500 mb-6 drop-shadow-sm">
+              {currentTask.title}
+            </h3>
+            
+            <div className="bg-blue-50 rounded-3xl p-8 mb-10 border-2 border-blue-100">
+              <p className="text-3xl md:text-5xl text-gray-800 font-bold leading-snug whitespace-pre-line">
+                {currentTask.task}
+              </p>
+            </div>
+
+            <button 
+              onClick={closeModal}
+              className="px-12 py-5 bg-green-500 text-white text-3xl font-bold rounded-full shadow-[0_6px_0_rgb(21,128,61)] hover:bg-green-400 hover:translate-y-1 hover:shadow-[0_2px_0_rgb(21,128,61)] active:translate-y-2 active:shadow-none transition-all"
+            >
+              完成任务！
+            </button>
+
+            {/* 主持人暗扣提示区 (角落小按钮) */}
+            <div className="absolute bottom-6 right-6 text-right">
+              {!showHostNote ? (
+                <button 
+                  onClick={() => setShowHostNote(true)}
+                  className="text-gray-400 hover:text-gray-600 font-bold text-sm bg-gray-100 px-3 py-1 rounded-full opacity-50 hover:opacity-100 transition-opacity"
+                >
+                  🕵️ 主持人提示
+                </button>
+              ) : (
+                <div className="bg-yellow-100 border border-yellow-300 p-4 rounded-xl text-left shadow-lg max-w-xs relative animate-[fadeIn_0.3s_ease-in]">
+                  <button 
+                    onClick={() => setShowHostNote(false)}
+                    className="absolute top-1 right-2 text-gray-500 hover:text-red-500 font-bold"
+                  >
+                    ×
+                  </button>
+                  <span className="block font-bold text-yellow-800 text-sm mb-1">💡 主持人提示：</span>
+                  <span className="text-gray-700 text-sm">{currentTask.hostNote || '让小朋友自由发挥即可。'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tailwind 无法原生的动画定义，我们通过内联 style 注入 */}
+      <style>{`
+        @keyframes bounceIn {
+          0% { transform: scale(0.3); opacity: 0; }
+          50% { transform: scale(1.05); opacity: 1; }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
